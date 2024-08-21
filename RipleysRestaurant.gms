@@ -1,6 +1,6 @@
 $TITLE Riplito
 
-set i /i1*i10/ ; 
+set i /i1*i11/ ; 
 
 parameter c(i) ; 
 
