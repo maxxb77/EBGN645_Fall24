@@ -1,1 +1,3 @@
 $TITLE Riplito
+
+set i ; 
