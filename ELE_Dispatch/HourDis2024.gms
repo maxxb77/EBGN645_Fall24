@@ -1,6 +1,7 @@
 $Title Simple Hourly Dispatch LP
 * Maxwell Brown
-* Updated 1 28 2020
+
+$if not set sw_season $setglobal sw_season "day"
 
 *Policy Switches
 Scalar CAPTrade "Switch to turn on [1] or off [0] a carbon cap with trading" /0/;
@@ -17,8 +18,6 @@ set k "season" /day, summer/;
 Table dem_in(h,k) "reference demand by hour and season (MWh)"
 $include refdem.inc
 ;
-
-$if not set sw_season $setglobal sw_season "day"
 
 parameter d(h) "demand by hour - used in the model (MWh)";
 d(h) = dem_in(h,"%sw_season%");
@@ -50,7 +49,7 @@ set f "fuels, generation technology"
 
 set pc  "plant characteristics" /cap, hr, onm/;
 set pid "plant id" /1*328/;
-set genfeas(s,f,pid,h) "general feasibility set, determines when a plant can generate";
+set genfeas(s,f,pid,h) "generation feasibility set, determines when a plant can generate";
 
 *=======================
 *  End sets
