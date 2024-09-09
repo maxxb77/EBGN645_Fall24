@@ -79,7 +79,7 @@ parameter capfac(f) "capacity availability by fuel type"
          wat 0.55,
          wnd 0.45
          /;
-* offhand guesses -- do not cite/quote
+* offhand guesses 
 
 parameter fcost(f) "costs by fuel ($ / MMBTU)"
          /
