@@ -2,7 +2,7 @@ $TITLE Franzi
 
 *-- sets/indices --
 
-set t "time" /0*20/
+set t "time" /0*30/
 *    t0(t) "our first year" /0/
     t0(t) "our first year"
     tlast(t) "our last year"
@@ -19,17 +19,11 @@ tlast(t)$[t.val=smax(tt,tt.val)] = yes ;
 
 *--- Data ---
 scalar 
-p "sale price ($/tree)" /100/ 
-g "annual growth rate for trees (%)" /1.01/
-s0 "initial stock of trees (trees)" /100/ 
-r "discount rate (%)" /0.02/ ; 
-
-
-Parameters
-delta(t) "discount factor (unitless)" 
-;
-
-delta(t) = 1 / ((1+r)**t.val) ; 
+    p  "sale price ($/tree)" /100/ 
+    g  "annual growth rate for trees (%)" /1.021/
+    s0 "initial stock of trees (trees)" /100/ 
+    r  "discount rate (%)" /0.02/ 
+; 
 
 positive variable 
     H(t) "amount harvested in each year (trees)"
@@ -41,7 +35,6 @@ variable Z "objective function value" ;
 equation 
     objfn "target of our optimization"  
     eq_harvestlimit(t) "cant harvest more than what is in the stand"
-    eq_stock0(t) "first year limit on initial stock"
     eq_stock_tracking(t) "inter-year tracking of available tree stock"
 ;
 
@@ -51,30 +44,33 @@ equation
 * =g= : greater than 
 * net present of profit is equal to net profit * discount rate * price * harvest
 * 1 / ((1+r)**t.val) ; 
-objfn.. Z =e= sum(t, (1 / ((1+r)**t.val)) *  delta(t) * p * H(t)) ; 
+scalar sw_salvage "enable or disable salvage value" /0/ ; 
+objfn.. Z =e= sum(t, (1 / ((1+r)**t.val)) * p * H(t))
+              + sum(t$tlast(t), sw_salvage * S(t) ); 
 
 eq_harvestlimit(t)..
     S(t) =g= H(t)
 ;
 
+eq_stock_tracking(t)..
+    S(t) 
+    =e= 
+    
+    s0$t0(t)
 
+    + (g * sum(tt$tprev(t,tt), S(tt) - H(tt) ))$[not t0(t)]
 
-scalar sw_harvlim /0/ ; 
-
-equation eq_harvlim(t) ; 
-eq_harvlim(t)$sw_harvlim..
-    10 =g= H(t)
-;
-
-eq_stock0(t)$t0(t)..
-    S(t) =e= s0 ;
-; 
-
-eq_stock_tracking(t)$[not t0(t)]..
-    S(t) =e= g * sum(tt$tprev(t,tt), S(tt) - H(tt) )
+    - H(t)$[tlast(t)$sw_salvage]
+    
 ;
 
 model franzi /all/;
+
+solve franzi using lp maximizing z ; 
+
+execute_unload 'franzi_data.gdx' ; 
+
+$exit
 
 parameter rep "reporting parameter";
 
