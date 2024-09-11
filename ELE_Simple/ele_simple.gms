@@ -94,6 +94,7 @@ coal 0.02,
 gas 0.1
 /;
 
+
 equation eq_unitcommitment_lower(i,r,h,hh), eq_unitcommitment_upper(i,r,h,hh)  ; 
 
 set eqlimit(i,r,h,hh) ; 
@@ -116,12 +117,3 @@ eq_unitcommitment_upper(i,r,h,hh)$eqlimit(i,r,h,hh)..
 
 model elmo /all/ ; 
 
-solve elmo using lp minimizing z ; 
-
-* is wind generation being curtailed?
-* basically: is the output less than the capacity?
-
-parameter rep_wind ; 
-rep_wind(r,h) = g.l("wind",r,h) / (cf("wind",h) * capacity("wind",r)) ; 
-
-execute_unload 'data.gdx' ; 

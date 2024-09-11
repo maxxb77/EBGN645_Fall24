@@ -1,20 +1,21 @@
 $Title Simple Hourly Dispatch LP
 * Maxwell Brown
 
+option seed=7
+
 $if not set sw_season $setglobal sw_season "day"
 $if not set sw_co_reduction $setglobal sw_co_reduction 10
 $if not set sw_wy_reduction $setglobal sw_wy_reduction 7.5
 
 
-*Policy Switches
-Scalar CAPTrade "Switch to turn on [1] or off [0] a carbon cap with trading" /0/;
-Scalar TPSTrade "Switch to turn on [1] or off [0] a carbon TPS with trading" /0/;
 
 *=======================
 *  Begin sets
 *=======================
 
 set h "hour" /h1*h24/;
+set dayhours(h) /h8*h20/; 
+
 set k "season" /day, summer/;
 
 set s "states"
@@ -67,6 +68,15 @@ parameter capfac(f) "capacity availability by fuel type"
          /;
 * offhand guesses 
 
+parameter cf(f,h) 'capacity factor by technology and hour' ; 
+
+* start by broadcasting values
+cf(f,h) = capfac(f) ; 
+
+* remove those not possible
+cf("sun",h)$(not dayhours(h)) = 0 ; 
+
+
 parameter fcost(f) "costs by fuel ($ / MMBTU)"
          /
          bit  2.9,
@@ -84,3 +94,161 @@ parameter emit(f) "lbs co2 per mmbtu for fuel burning"
          sub  209
          /;
 
+parameter 
+  psi_state(s), 
+  psi_trade, 
+  phi_state(s), 
+  phi_trade ; 
+
+* set all to zero to start
+psi_state(s) = 0 ;  
+psi_trade = 0 ; 
+phi_state(s) = 0 ; 
+phi_trade = 0 ; 
+
+
+table d_in(h,k) 
+$include refdem.inc
+; 
+
+parameter d(h) "demand by hour (MW)" ; 
+
+d(h) = d_in(h,"%Sw_Season%") ; 
+
+table plantdata(s,f,pid,pc)
+$include plantdata.inc
+;
+
+set v(s,f,pid,h) "allowable combinations for technologies over all indices"; 
+*populate combinations..
+* - if you have a capacity factor (specific to solar)
+* - if you have capacity
+v(s,f,pid,h)$[cf(f,h)$plantdata(s,f,pid,"cap")] = yes ; 
+
+
+positive variables 
+X(s,f,pid,h) "generation by unit" ; 
+
+variable 
+Z "total cost - target of our objective" ; 
+
+
+equation 
+eq_objfn, eq_caplimit(s,f,pid,h), eq_supply_demand(h) ; 
+
+eq_objfn.. 
+  Z =e= sum((s,f,pid,h)$v(s,f,pid,h), X(s,f,pid,h) * 
+    (plantdata(s,f,pid,"onm") + plantdata(s,f,pid,"hr") * fcost(f)) )
+
+; 
+
+eq_caplimit(s,f,pid,h)$v(s,f,pid,h)..
+  cf(f,h) * plantdata(s,f,pid,"cap") =g= X(s,f,pid,h) 
+; 
+
+eq_supply_demand(h)..
+  sum((s,f,pid)$v(s,f,pid,h), X(s,f,pid,h)) =e= d(h) ; 
+
+*Policy Switches
+scalar
+  cap_state "impose cap on state level" /0/
+  cap_trade "impose cap with trading"   /0/
+  tps_state "impose tps on state level" /0/
+  tps_trade "impose tps with trading"   /0/
+;
+
+* policy equations
+equation 
+eq_cap_state(s)
+eq_cap_trade
+eq_tps_state(s)
+eq_tps_trade
+;
+
+parameter phi, phi_state, psi, psi_state ; 
+
+phi = 0 ; 
+phi_state(s) = 0 ; 
+psi = 0 ; 
+psi_state(s)  = 0 ; 
+
+eq_cap_state(s)$cap_state.. 
+  psi_state(s) 
+  
+  =g=
+
+  sum((f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X(s,f,pid,h)) 
+;
+
+
+eq_cap_trade$cap_trade.. 
+
+  psi
+  
+  =g=
+
+  sum((s,f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X(s,f,pid,h)) 
+;
+
+
+eq_tps_state(s)$tps_state.. 
+
+  phi_state(s) * sum((f,pid,h)$v(s,f,pid,h), X(s,f,pid,h)) 
+  
+  =g=
+
+  sum((f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X(s,f,pid,h)) 
+
+
+;
+
+
+eq_tps_trade$tps_trade.. 
+
+  phi * sum((s,f,pid,h)$v(s,f,pid,h), X(s,f,pid,h)) 
+  
+  =g=
+
+  sum((s,f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X(s,f,pid,h)) 
+
+
+;
+
+model ele /all/ ; 
+
+parameter rep_gen ; 
+
+solve ele using lp minimizing z ; 
+rep_gen(s,f,pid,h,"bau") = X.l(s,f,pid,h) ; 
+
+* calculate the emissions (total and rate) and set our standards ; 
+
+*$if not set sw_co_reduction $setglobal sw_co_reduction 10
+*$if not set sw_wy_reduction $setglobal sw_wy_reduction 7.5
+
+scalar 
+co_reduction /%sw_co_reduction%/ 
+wy_reduction /%sw_wy_reduction%/ ; 
+
+parameter state_red(s) ; 
+state_red("co") = 1-co_reduction/100 ; 
+state_red("wy") = 1-wy_reduction/100 ; 
+
+psi_state(s) = 
+    state_red(s) * sum((f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
+    ;
+
+psi_trade = sum(s,psi_state(s)) ; 
+
+phi_state(s) =
+  state_red(s) * sum((f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
+  / sum((f,pid,h)$v(s,f,pid,h), X.l(s,f,pid,h) )
+  ;
+
+phi_trade = 
+ (1-0.08) *sum((s,f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
+  / sum((s,f,pid,h)$v(s,f,pid,h), X.l(s,f,pid,h) ) ; 
+
+
+
+execute_unload 'lp_solve.gdx' ; 
