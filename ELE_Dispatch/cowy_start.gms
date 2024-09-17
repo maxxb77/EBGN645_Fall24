@@ -202,7 +202,6 @@ eq_tps_state(s)$tps_state..
 
 ;
 
-
 eq_tps_trade$tps_trade.. 
 
   phi * sum((s,f,pid,h)$v(s,f,pid,h), X(s,f,pid,h)) 
@@ -217,14 +216,15 @@ eq_tps_trade$tps_trade..
 model ele /all/ ; 
 
 parameter rep_gen ; 
+parameter rep_gen_day, rep_cost ; 
 
 solve ele using lp minimizing z ; 
 rep_gen(s,f,pid,h,"bau") = X.l(s,f,pid,h) ; 
+rep_gen_day(s,f,"bau") = sum((pid,h),X.l(s,f,pid,h)) ; 
+rep_cost("bau") = z.l ;
 
-* calculate the emissions (total and rate) and set our standards ; 
 
-*$if not set sw_co_reduction $setglobal sw_co_reduction 10
-*$if not set sw_wy_reduction $setglobal sw_wy_reduction 7.5
+
 
 scalar 
 co_reduction /%sw_co_reduction%/ 
@@ -238,17 +238,58 @@ psi_state(s) =
     state_red(s) * sum((f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
     ;
 
-psi_trade = sum(s,psi_state(s)) ; 
+cap_state = 1 ; 
 
+solve ele using lp minimizing z ; 
+rep_gen(s,f,pid,h,"state_cap") = X.l(s,f,pid,h) ; 
+rep_gen_day(s,f,"state_cap") = sum((pid,h),X.l(s,f,pid,h)) ; 
+rep_cost("state_cap") = z.l ;
+
+
+* grab state-level emissions rates 
 phi_state(s) =
-  state_red(s) * sum((f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
+  sum((f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
   / sum((f,pid,h)$v(s,f,pid,h), X.l(s,f,pid,h) )
   ;
 
-phi_trade = 
- (1-0.08) *sum((s,f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
-  / sum((s,f,pid,h)$v(s,f,pid,h), X.l(s,f,pid,h) ) ; 
 
+* disable state cap
+* enable trade cap
+cap_state = 0 ; 
+cap_trade = 1 ; 
+psi = sum(s,psi_state(s)) ; 
+
+solve ele using lp minimizing z ; 
+rep_gen(s,f,pid,h,"trade_cap") = X.l(s,f,pid,h) ; 
+rep_gen_day(s,f,"trade_cap") = sum((pid,h),X.l(s,f,pid,h)) ; 
+rep_cost("trade_cap") = z.l ;
+
+phi =
+  sum((s,f,pid,h)$v(s,f,pid,h), emit(f) * plantdata(s,f,pid,"hr") * X.l(s,f,pid,h) )
+  / sum((s,f,pid,h)$v(s,f,pid,h), X.l(s,f,pid,h) )
+  ;
+
+*disable tradable cap
+cap_trade = 0 ; 
+
+*enable state-level emissions standards
+tps_state = 1 ; 
+
+solve ele using lp minimizing z ; 
+rep_gen(s,f,pid,h,"tps_state") = X.l(s,f,pid,h) ; 
+rep_gen_day(s,f,"tps_state") = sum((pid,h),X.l(s,f,pid,h)) ; 
+rep_cost("tps_state") = z.l ;
+
+*disable state-level tps
+tps_state = 0 ;
+
+* enable tradable performance standard for all states 
+tps_trade = 1 ;
+
+solve ele using lp minimizing z ; 
+rep_gen(s,f,pid,h,"tps_trade") = X.l(s,f,pid,h) ; 
+rep_gen_day(s,f,"tps_trade") = sum((pid,h),X.l(s,f,pid,h)) ; 
+rep_cost("tps_trade") = z.l ;
 
 
 execute_unload 'lp_solve.gdx' ; 
