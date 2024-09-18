@@ -5,7 +5,7 @@ option seed=7
 
 $if not set sw_season $setglobal sw_season "day"
 $if not set sw_co_reduction $setglobal sw_co_reduction 10
-$if not set sw_wy_reduction $setglobal sw_wy_reduction 7.5
+$if not set sw_wy_reduction $setglobal sw_wy_reduction 20
 
 
 
@@ -125,29 +125,49 @@ set v(s,f,pid,h) "allowable combinations for technologies over all indices";
 * - if you have capacity
 v(s,f,pid,h)$[cf(f,h)$plantdata(s,f,pid,"cap")] = yes ; 
 
+scalar sw_elas /0/ ; 
+
+set b 'demand bin' /1*100/ ; 
+alias(b,bb) ; 
+scalar ele_elas /-0.5/ ; 
+
+parameter pbar(b,h) "value of demand for each bin and hour ($ / mwh)",
+          qbar(b,h) "quantity available for each bin and hour (mwh)"
+;
+
+pbar(b,h) = 0 ; 
+qbar(b,h) = d(h) / 50 ; 
+
+
+execute_unload 'demand_check.gdx' ; 
 
 positive variables 
-X(s,f,pid,h) "generation by unit" ; 
+X(s,f,pid,h) "generation by unit",
+Q(b,h) ; 
 
 variable 
 Z "total cost - target of our objective" ; 
 
 
 equation 
-eq_objfn, eq_caplimit(s,f,pid,h), eq_supply_demand(h) ; 
+eq_objfn, eq_caplimit(s,f,pid,h), eq_supply_demand(h), eq_qbar_limit(b,h) ; 
 
 eq_objfn.. 
   Z =e= sum((s,f,pid,h)$v(s,f,pid,h), X(s,f,pid,h) * 
     (plantdata(s,f,pid,"onm") + plantdata(s,f,pid,"hr") * fcost(f)) )
-
+    - sum((b,h),pbar(b,h) * Q(b,h))$sw_elas
 ; 
+
+eq_qbar_limit(b,h)$sw_elas.. qbar(b,h) =g= Q(b,h) ; 
 
 eq_caplimit(s,f,pid,h)$v(s,f,pid,h)..
   cf(f,h) * plantdata(s,f,pid,"cap") =g= X(s,f,pid,h) 
 ; 
 
 eq_supply_demand(h)..
-  sum((s,f,pid)$v(s,f,pid,h), X(s,f,pid,h)) =e= d(h) ; 
+  sum((s,f,pid)$v(s,f,pid,h), X(s,f,pid,h)) =e= 
+  d(h)$(not sw_elas)
+  + sum(b,Q(b,h))$sw_elas ; 
 
 *Policy Switches
 scalar
@@ -219,12 +239,18 @@ parameter rep_gen ;
 parameter rep_gen_day, rep_cost ; 
 
 solve ele using lp minimizing z ; 
+
+* compute the values along the demand curve
+pbar(b,h) = eq_supply_demand.m(h) * 
+  (sum(bb$(bb.val<=b.val),qbar(b,h)) / d(h)) ** ele_elas;
+
+* enable elasticity
+sw_elas = 1 ; 
+* solve our reference case
+solve ele using lp minimizing z ; 
 rep_gen(s,f,pid,h,"bau") = X.l(s,f,pid,h) ; 
 rep_gen_day(s,f,"bau") = sum((pid,h),X.l(s,f,pid,h)) ; 
 rep_cost("bau") = z.l ;
-
-
-
 
 scalar 
 co_reduction /%sw_co_reduction%/ 
@@ -292,4 +318,4 @@ rep_gen_day(s,f,"tps_trade") = sum((pid,h),X.l(s,f,pid,h)) ;
 rep_cost("tps_trade") = z.l ;
 
 
-execute_unload 'lp_solve.gdx' ; 
+execute_unload 'elastic_solve.gdx' ; 
