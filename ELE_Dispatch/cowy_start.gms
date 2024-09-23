@@ -5,7 +5,10 @@ option seed=7
 
 $if not set sw_season $setglobal sw_season "day"
 $if not set sw_co_reduction $setglobal sw_co_reduction 10
-$if not set sw_wy_reduction $setglobal sw_wy_reduction 20
+$if not set sw_wy_reduction $setglobal sw_wy_reduction 7.5
+
+* enable elastic demand in the counterfactuals?
+$if not set sw_elas $setglobal sw_elas 0
 
 
 
@@ -245,7 +248,8 @@ pbar(b,h) = eq_supply_demand.m(h) *
   (sum(bb$(bb.val<=b.val),qbar(b,h)) / d(h)) ** ele_elas;
 
 * enable elasticity
-sw_elas = 1 ; 
+sw_elas = %sw_elas% ; 
+
 * solve our reference case
 solve ele using lp minimizing z ; 
 rep_gen(s,f,pid,h,"bau") = X.l(s,f,pid,h) ; 
@@ -318,4 +322,4 @@ rep_gen_day(s,f,"tps_trade") = sum((pid,h),X.l(s,f,pid,h)) ;
 rep_cost("tps_trade") = z.l ;
 
 
-execute_unload 'elastic_solve.gdx' ; 
+execute_unload 'cowy_%elas%.gdx' ; 
