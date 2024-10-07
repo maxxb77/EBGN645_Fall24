@@ -322,4 +322,4 @@ rep_gen_day(s,f,"tps_trade") = sum((pid,h),X.l(s,f,pid,h)) ;
 rep_cost("tps_trade") = z.l ;
 
 
-execute_unload 'cowy_%elas%.gdx' ; 
+execute_unload 'cowy_%sw_elas%.gdx' ; 

@@ -116,6 +116,27 @@ Parameter ebar_rate(s) "Reference average carobn intensity at which the standard
 ebar_cap(s) = 1e10;
 ebar_rate(s) = 1e10;
 
+
+
+* --- Binning --- *
+* create a set of bins
+
+set b /1*100/ ; 
+alias(b,bb) ; 
+
+scalar sw_elas /0/ ; 
+scalar elasticity /-2/ ; 
+
+
+parameter pbar(h), qbar(h) ;
+
+pbar(h) = 5 ; 
+qbar(h) = d(h) ; 
+
+parameter mu(h,b), qlim_bin(h,b) ; 
+qlim_bin(h,b) = d(h) / 50 ; 
+mu(h,b) = pbar(h) * (sum(bb$[bb.val<=b.val], qlim_bin(h,bb) ) / qbar(h) ) ** elasticity; 
+
 *=======================
 *  End data
 *=======================
@@ -129,10 +150,12 @@ equation
 eq_cost "objective function",
 eq_capcon(s,f,pid,h) "generation cannot exceed capacity",
 eq_demcon(h) "generation must equal demand",
+eq_dembin_lim(b,h)
 eq_carboncap(s) "(optional) total emissions cannot exceed cap",
 eq_ratestandard(s) "(optional) emissions rate cannot exceed emissions standard";
 
-positive variable X(s,f,pid,h) "generation in MWH";
+positive variable X(s,f,pid,h) "generation in MWH", 
+                  dem_b(h,b) "demand by bin";
 
 variable Z "objective function value ($s)";
 
@@ -141,12 +164,19 @@ eq_cost.. Z =e=
                 X(s,f,pid,h) * (plantdata(s,f,pid,"onm")
                                 + plantdata(s,f,pid,"hr") * fcost(f)
                                )
-           );
+           )
+
+        - sum((h,b), mu(h,b) * dem_b(h,b) )$sw_elas
+;
+
+eq_dembin_lim(b,h)$sw_elas..
+        qlim_bin(h,b) =g= dem_b(h,b) ; 
 
 eq_capcon(s,f,pid,h)$genfeas(s,f,pid,h).. 
         capfac(f) * plantdata(s,f,pid,"cap") =g= X(s,f,pid,h);
 
-eq_demcon(h).. sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) =g= d(h);
+eq_demcon(h).. sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) 
+                =g= d(h)$(not sw_elas) + sum(b,dem_b(h,b))$sw_elas;
 
 eq_carboncap(s)$SwCap(s).. 
         (1-psi(s)) * ebar_cap(s) 
@@ -168,92 +198,16 @@ model ele_dispatch /all/;
 
 solve ele_dispatch using LP minimizing Z;
 
-parameter rep_gen;
 
-rep_gen(s,f,h) = sum(pid$genfeas(s,f,pid,h),X.l(s,f,pid,h));
+pbar(h) = eq_demcon.m(h) ; 
+mu(h,b) = pbar(h) * (sum(bb$[bb.val<=b.val], qlim_bin(h,bb) ) / qbar(h) ) ** elasticity; 
+
+sw_elas = 1 ; 
+
+solve ele_dispatch using LP minimizing Z;
 
 execute_unload 'eledat.gdx';
 
-
-
-
-
-
-$exit
-
-Equations
-CostEq                             "Objective function",
-DemEq(h)                           "Demand needs to be met by sum of generation over fuels",
-FuelCapEq(s,f,pid,h)               "Generation by fuel cannot exceed capacity",
-RegCAPEq(s)                        "Carbon cap regulation constraint (aggregate carbon emissions)",
-CAPTradeEQ					   	   "Carbon cap with trade"
-RegTPSEq(s)                        "TPS regulation constraint (average carbon emissions)"
-TPSTradeEQ                         "TPS regulation with trading"
-;
-
-Positive Variables
-GEN(s,f,pid,h)                     "Generation by technology by hour (MWH)"
-;
-
-Variable
-COST                               "Cost of delivering electricity ($)";
-
-
-*sum of costs are those from operating (onm) and fuel (hr * fcost)
-CostEQ.. COST =E= sum((s,f,pid,h)$genfeas(s,f,pid,h),
-                            GEN(s,f,pid,h) * (
-                                    plantdata(s,f,pid,"onm")
-                                  + plantdata(s,f,pid,"hr") * fcost(f)  
-                                  )
-                      );
-
-*generation from all states must equal the demand, depending on day
-DemEQ(H).. 
-	SUM((s,f,pid)$genfeas(s,f,pid,h),GEN(s,f,pid,h)) 
-		=G= 
-     d(h);
-
-FuelCapEq(s,f,pid,h)$(genfeas(s,f,pid,h)).. 
-	capfac(f) * plantdata(s,f,pid,"CAP") 
-		=g= 
-	GEN(s,f,pid,h);
-
-*carbon emissions must be less than the cap (if activated)
-RegCapEQ(s)$SwCAP(s).. 
-	(1-Psi(s)) * ebar_cap(s) 
-		=g= 
-	sum((f,pid,h)$genfeas(s,f,pid,h),
-        GEN(s,f,pid,h) * plantdata(s,f,pid,"hr") * emit(f));
-
-*rate of emissions must be less than the emissions standard
-RegTPSEQ(s)$SwTPS(s).. 
-	(1-Psi(s)) * ebar_rate(s) 
-        * sum((f,pid,h)$genfeas(s,f,pid,h),GEN(s,f,pid,h))
-        =g=
-    sum((f,pid,h)$genfeas(s,f,pid,h),
-        GEN(s,f,pid,h) * plantdata(s,f,pid,"hr") * emit(f));
-
-*cap with trading (just summing over states on both sides)
-CAPTradeEQ$CAPTrade.. 
-	sum(s,(1-Psi(s)) * ebar_cap(s)) 
-		=g= 
-	sum((s,f,pid,h)$genfeas(s,f,pid,h),
-        GEN(s,f,pid,h) * plantdata(s,f,pid,"hr") * emit(f));
-
-*TPS with trading
-TPSTradeEQ$TPSTrade..    
-	(sum(s,(1-psi(s)) * ebar_cap(s)) / sum(h,d(h)) )
-    * sum((s,f,pid,h)$genfeas(s,f,pid,h),GEN(s,f,pid,h)) 
-    =g= 
-    sum((s,f,pid,h)$genfeas(s,f,pid,h),
-        GEN(s,f,pid,h) * plantdata(s,f,pid,"hr") * emit(f));
-
-*define the model
-Model HourlyDis /all/;
-
-*=======================
-*  End Model
-*=======================
 
 
 
