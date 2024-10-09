@@ -24,11 +24,11 @@ PARAMETERS
         eta     inverse intertemporal elasticity        /2/
 
 *calibrated parameters...
-        rho     pure time preference rate
         k0      initial capital stock
         l0      initial labor supply
-        a       prod fn scale parameter
-        qref(t) steady-state output index
         l(t)    labor supply
+        a       prod fn scale parameter
+        rho     pure time preference rate
+        qref(t) steady-state output index
         beta(t) discount factor
 ;
