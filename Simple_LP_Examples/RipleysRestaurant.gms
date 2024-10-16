@@ -52,6 +52,27 @@ parameter rep ;
 solve ripley using lp maximizing z ; 
 rep(i,"bau") = X.l(i) ; 
 
+
+execute_unload 'alldata_primal.gdx' ; 
+
+variable dual_z ; 
+positive variable lambda ; 
+
+
+equation dual_obj, zpc ; 
+
+dual_obj.. dual_z =e= lambda * hbar ; 
+
+zpc(i).. lambda * h(i) =g= r(i) - c(i) ; 
+
+model dual /dual_obj, zpc/ ; 
+
+solve dual using lp minimizing dual_z ; 
+
+execute_unload 'alldata_dual.gdx' ; 
+
+$exit
+
 * enable the switch and re-solve
 sw_combo = 1 ; 
 solve ripley using lp maximizing z ; 
@@ -66,4 +87,4 @@ solve ripley using lp maximizing z ;
 rep(i,"hungry") = X.l(i) ; 
 
 
-execute_unload 'alldata.gdx' ; 
+
