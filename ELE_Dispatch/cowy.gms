@@ -198,6 +198,43 @@ model ele_dispatch /all/;
 
 solve ele_dispatch using LP minimizing Z;
 
+execute_unload 'primal.gdx' ; 
+
+equation obj_dual, zpc_dual ; 
+
+variable z_dual ; 
+
+positive variables
+lambda_k, lambda_d ; 
+
+obj_dual.. z_dual =e=
+        sum((h),lambda_d(h) * d(h))
+        - sum((s,f,pid,h)$genfeas(s,f,pid,h), 
+                                        lambda_k(s,f,pid,h) * capfac(f) * plantdata(s,f,pid,"cap") )
+;
+
+zpc_dual(s,f,pid,h)$genfeas(s,f,pid,h)..
+             (plantdata(s,f,pid,"onm") + plantdata(s,f,pid,"hr") * fcost(f))
+           +  lambda_k(s,f,pid,h) =g= lambda_d(h) ; 
+
+model dual /obj_dual, zpc_dual/ ; 
+
+solve dual using LP maximizing z_dual ; 
+
+execute_unload 'dual.gdx' ; 
+
+model mcp_ele 
+/
+eq_demcon.lambda_d,
+eq_capcon.lambda_k,
+zpc_dual.x
+/ ; 
+
+solve mcp_ele using mcp ; 
+
+
+$exit
+
 
 pbar(h) = eq_demcon.m(h) ; 
 mu(h,b) = pbar(h) * (sum(bb$[bb.val<=b.val], qlim_bin(h,bb) ) / qbar(h) ) ** elasticity; 
