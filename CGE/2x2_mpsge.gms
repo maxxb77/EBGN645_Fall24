@@ -64,7 +64,7 @@ $DEMAND:CONS
 
 $offtext
 
-$sysinclude mpsgeset irs
+$sysinclude mpsgeset 2x2
 
 
 * Choose numeraire price.
