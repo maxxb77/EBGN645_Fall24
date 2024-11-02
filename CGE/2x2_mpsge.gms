@@ -1,4 +1,4 @@
-* 2x2 CGE model with taxes in the X sector.
+* a2x2 CGE model with taxes in the X sector.
 
 $ontext
                   Production Sectors          Consumers
@@ -23,7 +23,7 @@ SCALARS
 
 $ontext
 
-$MODEL:2x2
+$MODEL:a2x2
 
 $SECTORS:
 	X	! Activity level for the sector X
@@ -59,29 +59,29 @@ $DEMAND:CONS
 	d:PW	q:200
 	e:PL	q:(100*lendow)
 	e:PK	q:100
-	e:PX	q:100	r:XQADJ
+	e:PX	q:100
 
 
 $offtext
 
-$sysinclude mpsgeset 2x2
+$sysinclude mpsgeset a2x2
 
 
 * Choose numeraire price.
 
 PL.fx = 1;
 
-$include 2x2.gen
-solve 2x2 using mcp;
+$include a2x2.gen
+solve a2x2 using mcp;
 
 
 * Solve the tax counterfactual:
 
-2x2.iterlim = 1000;
+a2x2.iterlim = 1000;
 
 tx = 0.5;
 
-$include 2x2.gen
-solve 2x2 using mcp;
+$include a2x2.gen
+solve a2x2 using mcp;
 
 
