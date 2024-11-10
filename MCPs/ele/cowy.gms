@@ -104,7 +104,7 @@ parameter emit(f) "lbs co2 per mmbtu for fuel burning"
 *Unless otherwise defined, the Psi parameters are relative to the base case
 *note that we cannot be too stringent w/o elastic demand, safety valve credits, or some capacity expansion capabilities
 Parameter  psi(s) "Percentage reduction of average CI or total carbon" 
-                /CO 5, WY 5/;
+                /CO 10, WY 7.5/;
 
 psi(s) = psi(s) / 100;
 
@@ -136,6 +136,8 @@ positive variable X(s,f,pid,h) "generation in MWH";
 
 variable Z "objective function value ($s)";
 
+scalar sw_elas /0/ ; 
+
 eq_cost.. Z =e=  
         sum((s,f,pid,h)$genfeas(s,f,pid,h), 
                 X(s,f,pid,h) * (plantdata(s,f,pid,"onm")
@@ -147,6 +149,7 @@ eq_capcon(s,f,pid,h)$genfeas(s,f,pid,h)..
 
 parameter pbar(h) ; 
 pbar(h) = 1 ; 
+scalar delas /-0.5/ ; 
 
 eq_demcon(h).. sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) 
                 =g= d(h); 
@@ -169,8 +172,44 @@ eq_ratestandard(s)$SwTPS(s)..
 
 model ele_dispatch /all/;
 
-* solve the LP
 solve ele_dispatch using LP minimizing Z;
+
+
+equation zpc_dual ; 
+
+equation eq_demcon_mcp(h) ; 
+
+positive variables
+lambda_k, lambda_d, lambda_tps, lambda_cap(s) ; 
+
+lambda_k.l(s,f,pid,h)$genfeas(s,f,pid,h) = eq_capcon.m(s,f,pid,h) ; 
+lambda_d.l(h) = eq_demcon.m(h) ; 
+
+
+eq_demcon_mcp(h).. 
+                sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) 
+                =g= d(h)$(not sw_elas) 
+                    + (d(h) * (lambda_d(h)/pbar(h)) ** (delas))$sw_elas ; 
+
+zpc_dual(s,f,pid,h)$genfeas(s,f,pid,h)..
+             (plantdata(s,f,pid,"onm") + plantdata(s,f,pid,"hr") * fcost(f))
+             +  lambda_k(s,f,pid,h)
+             + plantdata(s,f,pid,"hr") * emit(f) * lambda_cap(s)$swcap(s) 
+             + ((1-psi(s)) * ebar_rate(s) - plantdata(s,f,pid,"hr") * emit(f)) * lambda_tps(s)$swtps(s) 
+             =g= lambda_d(h) ; 
+
+
+model mcp_ele 
+/
+eq_demcon_mcp.lambda_d,
+eq_capcon.lambda_k,
+zpc_dual.x
+eq_carboncap.lambda_cap
+eq_ratestandard.lambda_tps
+/ ; 
+
+mcp_ele.iterlim = 0 ; 
+solve mcp_ele using mcp ; 
 
 ebar_cap(s) = sum((f,pid,h)$genfeas(s,f,pid,h), plantdata(s,f,pid,"hr") * emit(f) * X.l(s,f,pid,h) );
 
@@ -178,73 +217,17 @@ ebar_rate(s) = sum((f,pid,h)$genfeas(s,f,pid,h), plantdata(s,f,pid,"hr") * emit(
                 / sum((f,pid,h)$genfeas(s,f,pid,h), X.l(s,f,pid,h) )
 ;
 
-swcap(s) = yes ; 
-solve ele_dispatch using LP minimizing Z;
+lambda_d.lo(h) = 1e-3 ; 
 
-execute_unload 'alldata_lp.gdx' ; 
-
-positive variables
-lambda_k, lambda_d, lambda_tps(s), lambda_cap(s) ; 
-
-lambda_k.l(s,f,pid,h)$genfeas(s,f,pid,h) = eq_capcon.m(s,f,pid,h) ; 
-lambda_d.l(h) = eq_demcon.m(h) ; 
-lambda_tps.l(s)$swtps(s) = eq_ratestandard.m(s) ; 
-lambda_cap.l(s)$swcap(s) = eq_carboncap.m(s) ; 
-
-
-parameter pbar(h);
-
-pbar(h) = lambda_d.l(h) ; 
-
-* add a switch for demand
-scalar sw_elas /0/ ; 
-
-equation zpc_X(s,f,pid,h), eq_demcon_mcp(h) ; 
-* supply (generation) must meet or exceed demand
-* demand can either be inelastic or elastic depending on switch
-
-zpc_x(s,f,pid,h)$genfeas(s,f,pid,h)..
-* costs per mwh of genreation
-                                plantdata(s,f,pid,"onm")
-                                + lambda_k(s,f,pid,h)
-                                + plantdata(s,f,pid,"hr") * fcost(f) 
-                                + (plantdata(s,f,pid,"hr") * emit(f) * lambda_cap(s))$swcap(s)
-                                + ((plantdata(s,f,pid,"hr") * emit(f) - (1-psi(s)) * ebar_rate(s)) * lambda_tps(s))$swtps(s)
-                                =g=
-                                lambda_d(h)
-;
-
-eq_demcon_mcp(h)..
-        sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) 
-                =g= d(h)$(not sw_elas)
-                    + (d(h) * (lambda_d(h)/pbar(h)) ** (-0.5))$sw_elas ; 
-
-model ele_mcp 
-/
-eq_demcon_mcp.lambda_d,
-eq_capcon.lambda_k,
-eq_carboncap.lambda_cap,
-eq_ratestandard.lambda_tps,
-zpc_x.X
-/;
-
-ele_mcp.iterlim = 1e8 ;
-
-sw_elas = 0 ;
-
-solve ele_mcp using mcp ; 
-
-execute_unload 'alldata_mcp.gdx' ; 
-
-$exit
+mcp_ele.iterlim = 1000000 ; 
 
 sw_elas = 1 ; 
+swtps(s) = yes ; 
+swcap(s) = no ;
 
-solve ele_mcp using mcp ; 
-ele_mcp.iterlim = 1e8 ; 
+solve mcp_ele using mcp ; 
 
-swcap(s) = yes ; 
-lambda_d.lo(h) = 1e-2 ; 
-solve ele_mcp using mcp ; 
 
-execute_unload 'alldata_ele.gdx' ; 
+
+
+

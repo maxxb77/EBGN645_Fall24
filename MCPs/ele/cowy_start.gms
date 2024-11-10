@@ -147,6 +147,7 @@ eq_capcon(s,f,pid,h)$genfeas(s,f,pid,h)..
 
 parameter pbar(h) ; 
 pbar(h) = 1 ; 
+scalar delas /-0.5/ ; 
 
 eq_demcon(h).. sum((s,f,pid)$genfeas(s,f,pid,h),X(s,f,pid,h)) 
                 =g= d(h); 
@@ -178,16 +179,13 @@ ebar_rate(s) = sum((f,pid,h)$genfeas(s,f,pid,h), plantdata(s,f,pid,"hr") * emit(
                 / sum((f,pid,h)$genfeas(s,f,pid,h), X.l(s,f,pid,h) )
 ;
 
-swcap(s) = yes ; 
-solve ele_dispatch using LP minimizing Z;
-
-execute_unload 'alldata_lp.gdx' ; 
-
 positive variables
 lambda_k, lambda_d, lambda_tps(s), lambda_cap(s) ; 
 
 lambda_k.l(s,f,pid,h)$genfeas(s,f,pid,h) = eq_capcon.m(s,f,pid,h) ; 
+
 lambda_d.l(h) = eq_demcon.m(h) ; 
+
 lambda_tps.l(s)$swtps(s) = eq_ratestandard.m(s) ; 
 lambda_cap.l(s)$swcap(s) = eq_carboncap.m(s) ; 
 
@@ -205,9 +203,10 @@ equation zpc_X(s,f,pid,h), eq_demcon_mcp(h) ;
 
 zpc_x(s,f,pid,h)$genfeas(s,f,pid,h)..
 * costs per mwh of genreation
-                                plantdata(s,f,pid,"onm")
+
+                                (plantdata(s,f,pid,"onm")
                                 + lambda_k(s,f,pid,h)
-                                + plantdata(s,f,pid,"hr") * fcost(f) 
+                                + plantdata(s,f,pid,"hr") * fcost(f) ) 
                                 + (plantdata(s,f,pid,"hr") * emit(f) * lambda_cap(s))$swcap(s)
                                 + ((plantdata(s,f,pid,"hr") * emit(f) - (1-psi(s)) * ebar_rate(s)) * lambda_tps(s))$swtps(s)
                                 =g=
@@ -219,6 +218,7 @@ eq_demcon_mcp(h)..
                 =g= d(h)$(not sw_elas)
                     + (d(h) * (lambda_d(h)/pbar(h)) ** (-0.5))$sw_elas ; 
 
+
 model ele_mcp 
 /
 eq_demcon_mcp.lambda_d,
@@ -228,20 +228,14 @@ eq_ratestandard.lambda_tps,
 zpc_x.X
 /;
 
-ele_mcp.iterlim = 1e8 ;
-
-sw_elas = 0 ;
+ele_mcp.iterlim = 0 ;
 
 solve ele_mcp using mcp ; 
-
-execute_unload 'alldata_mcp.gdx' ; 
-
-$exit
 
 sw_elas = 1 ; 
 
 solve ele_mcp using mcp ; 
-ele_mcp.iterlim = 1e8 ; 
+ele_mcp.iterlim = 1e10 ; 
 
 swcap(s) = yes ; 
 lambda_d.lo(h) = 1e-2 ; 
