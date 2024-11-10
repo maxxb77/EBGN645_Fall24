@@ -115,7 +115,7 @@ dNegProfit(I)$[not leader(I)] ..
    c(I) + (L(I)*q(I))**(1/beta(I)) - p + q(I)*(1/gamma)*p/sum(J, q(J)) =g= 0;
 
 obj..
-   z =e= sum{leader(I), q(I)*p - q(I)*c(I) - s(I)*q(I)**((1 + beta(I))/beta(I))};
+   z =e= sum{i$leader(i), q(I)*p - q(I)*c(I) - s(I)*q(I)**((1 + beta(I))/beta(I))};
 
 Model
    nashmcp  / dNegProfit.q, defp.p      /
